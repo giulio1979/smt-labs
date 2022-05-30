@@ -29,7 +29,7 @@ DATA=$(
     "confluent.topic.replication.factor": "1",
     "headers": "Content-Type:application/vnd.kafka.json.v2+json",
     "request.body.format": "json",
-    "batch.json.as.array": "false",
+    "batch.json.as.array": "true",
     "reporter.bootstrap.servers": "broker:29092",
     "reporter.result.topic.name": "success-responses",
     "reporter.result.topic.replication.factor": "1",

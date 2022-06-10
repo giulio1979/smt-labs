@@ -1,6 +1,7 @@
 #!/bin/bash
 echo "Installing connector plugins"
 confluent-hub install --no-prompt confluentinc/kafka-connect-http:1.5.3
+confluent-hub install --no-prompt confluentinc/connect-transforms:1.4.3
 echo "Installing SMTs from volume"
 cp /tmp/smt/*.jar /usr/share/confluent-hub-components
 #
@@ -30,12 +31,14 @@ DATA=$(
     "headers": "Content-Type:application/vnd.kafka.json.v2+json",
     "request.body.format": "json",
     "batch.json.as.array": "true",
-    "reporter.bootstrap.servers": "broker:29092",
-    "reporter.result.topic.name": "success-responses",
-    "reporter.result.topic.replication.factor": "1",
-    "reporter.error.topic.name":"error-responses",
-    "reporter.error.topic.replication.factor":"1",
-    "transforms": "InsertLMv1Token",
+    "reporter.result.topic.name": "",
+    "reporter.error.topic.name": "",
+    "transforms": "HoistField,InsertField,InsertLMv1Token",
+    "transforms.HoistField.type": "org.apache.kafka.connect.transforms.HoistField$Value",
+    "transforms.HoistField.field": "msg",
+    "transforms.InsertField.type": "org.apache.kafka.connect.transforms.InsertField$Value",
+    "transforms.InsertField.static.field": "_lm.resourceid",
+    "transforms.InsertField.static.value": "{\"system.deviceid\": \"41\"}",
     "transforms.InsertLMv1Token.type": "work.hashi.kafka.smtLabs.InsertLMv1Token",
     "transforms.InsertLMv1Token.access.id": "testaccessid123",
     "transforms.InsertLMv1Token.access.key": "testaccesskey123"

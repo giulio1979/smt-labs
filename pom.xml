@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>hashi.work.kafka</groupId>
     <artifactId>smt-labs</artifactId>
-    <version>0.2.0</version>
+    <version>0.2.1</version>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -27,10 +27,14 @@
             <version>${kafkaconnect.version}</version>
         </dependency>
         <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>2.9.0</version>
+        </dependency>
+        <dependency>
             <groupId>com.logicmonitor</groupId>
             <artifactId>lm-logs-sdk-java</artifactId>
             <version>1.2</version>
-            <scope>compile</scope>
         </dependency>
     </dependencies>
 

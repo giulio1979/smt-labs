@@ -9,9 +9,11 @@ import org.apache.kafka.connect.transforms.Transformation;
 import org.apache.kafka.connect.transforms.util.SimpleConfig;
 import org.apache.kafka.connect.transforms.util.Requirements;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+
 import com.logicmonitor.auth.LMv1TokenGenerator;
 
-import java.time.Instant;
 import java.util.Map;
 
 import static org.apache.kafka.common.config.ConfigDef.NO_DEFAULT_VALUE;
@@ -22,8 +24,8 @@ public class InsertLMv1Token<R extends ConnectRecord<R>> implements Transformati
     public static final String ACCESS_KEY = "access.key";
     public static final String ACCESS_ID = "access.id";
     public static final String DEVICE_ID = "device.id";
-    public static final String RESOURCE_ID_MESSAGE_KEY = "_lm.resourceid";
-    public static final String DEVICE_ID_MESSAGE_KEY = "system.deviceid";
+    public static final String RESOURCE_ID_MESSAGE_KEY = "_lm.resourceId";
+    public static final String DEVICE_ID_MESSAGE_KEY = "system.deviceId";
     public static final String AUTH_HEADER_FIELD = "Authorization";
     public static final String HTTP_VERB = "POST";
     public static final String RESOURCE_PATH = "/log/ingest";
@@ -47,13 +49,13 @@ public class InsertLMv1Token<R extends ConnectRecord<R>> implements Transformati
 
     @Override
     public R apply(R record) {
-        Headers updatedHeaders = record.headers().duplicate();
-        updatedHeaders.add(AUTH_HEADER_FIELD, Values.parseString(generateLMv1Token(record.value())));
-
         Map<String, Object> resourceIdNode = new HashMap<String, Object>();
         resourceIdNode.put(DEVICE_ID_MESSAGE_KEY, deviceId);
         Map<String, Object> updatedValue = new HashMap<>(Requirements.requireMap(record.value(), ""));
         updatedValue.put(RESOURCE_ID_MESSAGE_KEY, resourceIdNode);
+
+        Headers updatedHeaders = record.headers().duplicate();
+        updatedHeaders.add(AUTH_HEADER_FIELD, Values.parseString(generateLMv1Token(updatedValue)));
 
         return record.newRecord(record.topic(), record.kafkaPartition(), record.keySchema(), record.key(),
                 record.valueSchema(), updatedValue, record.timestamp(), updatedHeaders);
@@ -76,8 +78,10 @@ public class InsertLMv1Token<R extends ConnectRecord<R>> implements Transformati
     }
 
     private String generateLMv1Token(Object fieldMessage) {
-        long epochTime = Instant.now().toEpochMilli();
-        return LMv1TokenGenerator.generate(accessId, accessKey, HTTP_VERB,
-                String.valueOf(fieldMessage), RESOURCE_PATH, epochTime);
+        Gson gson = new Gson();
+        String jsonString = gson.toJsonTree(fieldMessage).toString();
+
+        return LMv1TokenGenerator.generate(accessId, accessKey, HTTP_VERB, jsonString,
+                RESOURCE_PATH, System.currentTimeMillis());
     }
 }

@@ -22,7 +22,7 @@ DATA=$(
     "topics": "http-messages",
     "tasks.max": "1",
     "connector.class": "io.confluent.connect.http.HttpSinkConnector",
-    "http.api.url": "https://webhook.site/4f306081-24d4-447a-a392-d42c71e61ea7",
+    "http.api.url": "https://webhook.site/xxxx",
     "key.converter": "org.apache.kafka.connect.storage.StringConverter",
     "value.converter": "org.apache.kafka.connect.json.JsonConverter",
     "value.converter.schemas.enable": "false",

@@ -60,7 +60,7 @@ public class InsertLMv1Token<R extends ConnectRecord<R>> implements Transformati
         *  But the tested case worked with double backslash \\", which is an illegal escape in Strings in JSON.
         *  For the time being, it is replaced with double underscore.
         * */
-        String messageJSON = gson.toJsonTree(messageBody).toString().replaceAll(Pattern.quote("\""), "__");
+        String messageJSON = gson.toJsonTree(messageBody).toString().replaceAll(Pattern.quote("\""), "_");
 
         updatedValue.put(MESSAGE_KEY, (Object)messageJSON);
         updatedValue.put(RESOURCE_ID_MESSAGE_KEY, resourceIdNode);

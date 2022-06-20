@@ -10,11 +10,11 @@ import org.apache.kafka.connect.transforms.util.SimpleConfig;
 import org.apache.kafka.connect.transforms.util.Requirements;
 
 import com.google.gson.Gson;
-import com.google.gson.JsonObject;
 
 import com.logicmonitor.auth.LMv1TokenGenerator;
 
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import static org.apache.kafka.common.config.ConfigDef.NO_DEFAULT_VALUE;
 
@@ -24,6 +24,7 @@ public class InsertLMv1Token<R extends ConnectRecord<R>> implements Transformati
     public static final String ACCESS_KEY = "access.key";
     public static final String ACCESS_ID = "access.id";
     public static final String DEVICE_ID = "device.id";
+    public static final String MESSAGE_KEY = "msg";
     public static final String RESOURCE_ID_MESSAGE_KEY = "_lm.resourceId";
     public static final String DEVICE_ID_MESSAGE_KEY = "system.deviceId";
     public static final String AUTH_HEADER_FIELD = "Authorization";
@@ -52,13 +53,24 @@ public class InsertLMv1Token<R extends ConnectRecord<R>> implements Transformati
         Map<String, Object> resourceIdNode = new HashMap<String, Object>();
         resourceIdNode.put(DEVICE_ID_MESSAGE_KEY, deviceId);
         Map<String, Object> updatedValue = new HashMap<>(Requirements.requireMap(record.value(), ""));
+        Object messageBody = (Object)updatedValue.get(MESSAGE_KEY);
+
+        Gson gson = new Gson();
+        /* Logic Monitor requires double quotes in a message to be backslash escaped.
+        *  But the tested case worked with double backslash \\", which is an illegal escape in Strings in JSON.
+        *  For the time being, it is replaced with double underscore.
+        * */
+        String messageJSON = gson.toJsonTree(messageBody).toString().replaceAll(Pattern.quote("\""), "__");
+
+        updatedValue.put(MESSAGE_KEY, (Object)messageJSON);
         updatedValue.put(RESOURCE_ID_MESSAGE_KEY, resourceIdNode);
+        String payloadJSON = gson.toJsonTree(updatedValue).toString();
 
         Headers updatedHeaders = record.headers().duplicate();
-        updatedHeaders.add(AUTH_HEADER_FIELD, Values.parseString(generateLMv1Token(updatedValue)));
+        updatedHeaders.add(AUTH_HEADER_FIELD, Values.parseString(generateLMv1Token(payloadJSON)));
 
         return record.newRecord(record.topic(), record.kafkaPartition(), record.keySchema(), record.key(),
-                record.valueSchema(), updatedValue, record.timestamp(), updatedHeaders);
+                record.valueSchema(), (Object) updatedValue, record.timestamp(), updatedHeaders);
     }
 
     @Override
@@ -77,11 +89,9 @@ public class InsertLMv1Token<R extends ConnectRecord<R>> implements Transformati
         deviceId = config.getString(DEVICE_ID);
     }
 
-    private String generateLMv1Token(Object fieldMessage) {
-        Gson gson = new Gson();
-        String jsonString = gson.toJsonTree(fieldMessage).toString();
+    private String generateLMv1Token(String fieldMessage) {
 
-        return LMv1TokenGenerator.generate(accessId, accessKey, HTTP_VERB, jsonString,
+        return LMv1TokenGenerator.generate(accessId, accessKey, HTTP_VERB, fieldMessage,
                 RESOURCE_PATH, System.currentTimeMillis());
     }
 }

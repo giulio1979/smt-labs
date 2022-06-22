@@ -69,8 +69,6 @@ public class InsertLMv1Token<R extends ConnectRecord<R>> implements Transformati
         Headers updatedHeaders = record.headers().duplicate();
         updatedHeaders.add(AUTH_HEADER_FIELD, Values.parseString(generateLMv1Token("[" + payloadJSON + "]")));
 
-        System.out.println("Request Payload String:" + payloadJSON);
-        System.out.println("Payload for Token:" + "[" + payloadJSON + "]");
         return record.newRecord(record.topic(), record.kafkaPartition(), record.keySchema(), record.key(),
                 record.valueSchema(), (Object) updatedValue, record.timestamp(), updatedHeaders);
     }

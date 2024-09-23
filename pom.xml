@@ -9,7 +9,7 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <java.version>11</java.version>
+        <java.version>17</java.version>
         <kafkaconnect.version>3.6.2</kafkaconnect.version>
         <jnunit.version>4.13.2</jnunit.version>
     </properties>

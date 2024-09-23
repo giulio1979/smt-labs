@@ -8,11 +8,10 @@ import org.apache.kafka.connect.transforms.util.SimpleConfig;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 public class EnrichSchemaTransform<R extends ConnectRecord<R>> implements Transformation<R> {
 
@@ -22,7 +21,6 @@ public class EnrichSchemaTransform<R extends ConnectRecord<R>> implements Transf
     private ObjectMapper objectMapper = new ObjectMapper();
     private String fieldName;
     private Schema currentSchema;
-
 
     @Override
     public ConfigDef config() {
@@ -50,10 +48,18 @@ public class EnrichSchemaTransform<R extends ConnectRecord<R>> implements Transf
                     String jsonString = (String) struct.get(fieldName);
                     Map<String, Object> parsedJson = objectMapper.readValue(jsonString, Map.class);
 
-                    // Dynamically enrich the schema with new fields
+                    // Check if the parsed JSON is empty
+                    if (parsedJson.isEmpty()) {
+                        return record;  // Return the original record if JSON is empty
+                    }
+
                     Schema enrichedSchema = dynamicallyEnrichSchema(parsedJson);
 
-                    // Build new Struct with the enriched schema
+                    // If the schema hasn't changed, return the original record
+                    if (enrichedSchema == valueSchema) {
+                        return record;
+                    }
+
                     Struct newStruct = buildStructWithSchema(enrichedSchema, struct, parsedJson);
 
                     return record.newRecord(
@@ -71,74 +77,29 @@ public class EnrichSchemaTransform<R extends ConnectRecord<R>> implements Transf
             }
         }
 
-        return record;  // No transformation if schema or field isn't present
+        return record;
     }
 
-    private Schema dynamicallyEnrichSchema(Map<String, Object> jsonFields) {
-        // Start with the current schema and build upon it
-        SchemaBuilder builder = SchemaBuilder.struct();
 
-// If currentSchema exists, add its fields to the builder first
-        if (currentSchema != null) {
-            for (Field field : currentSchema.fields()) {
-                builder.field(field.name(), field.schema());
-            }
-        }
-
-// Now, add new fields from the parsed JSON object, marking them as optional
-        for (Map.Entry<String, Object> entry : jsonFields.entrySet()) {
-            // Add the field only if it doesn't already exist in the current schema
-            if (currentSchema == null || currentSchema.field(entry.getKey()) == null) {
-                Schema fieldSchema = inferSchema(entry.getValue());
-                System.out.println(fieldSchema.toString());
-                builder.field(entry.getKey(), fieldSchema);
-            }
-        }
-
-// Build the enriched schema with both old and new fields
-        currentSchema = builder.build();
-        return currentSchema;
-    }
-
-    private Struct buildStructWithSchema(Schema enrichedSchema, Struct originalStruct, Map<String, Object> jsonFields) {
-        Struct newStruct = new Struct(enrichedSchema);
-
-        // Copy original fields
-        for (Field field : enrichedSchema.fields()) {
-            if (field.name().equals(fieldName)) {
-                newStruct.put(field, jsonFields);
-            } else if (originalStruct.schema().field(field.name()) != null) {
-                newStruct.put(field, originalStruct.get(field.name()));
-            } else {
-                newStruct.put(field, null);  // If the field is not present, we set it to null
-            }
-        }
-
-        return newStruct;
-    }
+    /**
+     * Infer schema based on the value type.
+     */
     private Schema inferSchema(Object value) {
-        if (value instanceof Integer) {
-            return Schema.INT32_SCHEMA;
+        if (value == null) {
+            return Schema.OPTIONAL_STRING_SCHEMA;
+        } else if (value instanceof Integer) {
+            return Schema.OPTIONAL_INT32_SCHEMA;
         } else if (value instanceof Long) {
-            return Schema.INT64_SCHEMA;
+            return Schema.OPTIONAL_INT64_SCHEMA;
         } else if (value instanceof Float) {
-            return Schema.FLOAT32_SCHEMA;
+            return Schema.OPTIONAL_FLOAT32_SCHEMA;
         } else if (value instanceof Double) {
-            return Schema.FLOAT64_SCHEMA;
+            return Schema.OPTIONAL_FLOAT64_SCHEMA;
         } else if (value instanceof Boolean) {
-            return Schema.BOOLEAN_SCHEMA;
+            return Schema.OPTIONAL_BOOLEAN_SCHEMA;
         } else if (value instanceof String) {
-            return Schema.STRING_SCHEMA;
-        } else if (value instanceof Map) {
-            // If it's a nested Map, we recursively build a schema for it
-            Map<String, Object> map = (Map<String, Object>) value;
-            SchemaBuilder structBuilder = SchemaBuilder.struct();
-            for (Map.Entry<String, Object> entry : map.entrySet()) {
-                structBuilder.field(entry.getKey(), inferSchema(entry.getValue()));
-            }
-            return structBuilder.build();
+            return Schema.OPTIONAL_STRING_SCHEMA;
         } else if (value instanceof List) {
-            // If it's an array (List), we merge schemas across all elements
             List<?> list = (List<?>) value;
             if (!list.isEmpty()) {
                 // Start with an empty map to accumulate schemas
@@ -173,24 +134,99 @@ public class EnrichSchemaTransform<R extends ConnectRecord<R>> implements Transf
                 // Default schema for empty array
                 return SchemaBuilder.array(Schema.OPTIONAL_STRING_SCHEMA).optional().build();
             }
+        } else if (value instanceof Map) {
+            SchemaBuilder builder = SchemaBuilder.struct().optional();
+            Map<?, ?> map = (Map<?, ?>) value;
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                if (entry.getKey() instanceof String) {
+                    String key = (String) entry.getKey();
+                    Schema fieldSchema = inferSchema(entry.getValue());
+                    builder.field(key, fieldSchema);
+                }
+            }
+            return builder.build();
         }
-        return Schema.OPTIONAL_STRING_SCHEMA;  // Default schema for unrecognized types
+        return Schema.OPTIONAL_STRING_SCHEMA;
+    }
+
+    private Schema dynamicallyEnrichSchema(Map<String, Object> jsonFields) {
+        SchemaBuilder builder = SchemaBuilder.struct();
+
+        if (currentSchema != null) {
+            for (Field field : currentSchema.fields()) {
+                builder.field(field.name(), field.schema());
+            }
+        }
+
+        for (Map.Entry<String, Object> entry : jsonFields.entrySet()) {
+            if (currentSchema == null || currentSchema.field(entry.getKey()) == null) {
+                Schema fieldSchema = inferSchema(entry.getValue());
+                builder.field(entry.getKey(), fieldSchema);
+            }
+        }
+
+        currentSchema = builder.build();
+        return currentSchema;
+    }
+
+    private Object convertValue(Object value, Schema schema) {
+        if (value == null) {
+            return null;
+        }
+        switch (schema.type()) {
+            case STRUCT:
+                Struct struct = new Struct(schema);
+                Map<?, ?> map = (Map<?, ?>) value;
+                for (Field field : schema.fields()) {
+                    Object fieldValue = map.get(field.name());
+                    struct.put(field, convertValue(fieldValue, field.schema()));
+                }
+                return struct;
+            case ARRAY:
+                List<?> list = (List<?>) value;
+                List<Object> convertedList = new ArrayList<>(list.size());
+                for (Object item : list) {
+                    convertedList.add(convertValue(item, schema.valueSchema()));
+                }
+                return convertedList;
+            default:
+                return value;
+        }
+    }
+
+    private Struct buildStructWithSchema(Schema enrichedSchema, Struct originalStruct, Map<String, Object> jsonFields) {
+        Struct newStruct = new Struct(enrichedSchema);
+
+        for (Field field : enrichedSchema.fields()) {
+            String fieldName = field.name();
+            if (fieldName.equals(this.fieldName)) {
+                newStruct.put(field, originalStruct.get(this.fieldName));
+            } else if (originalStruct.schema().field(fieldName) != null) {
+                newStruct.put(field, originalStruct.get(fieldName));
+            } else {
+                Object value = jsonFields.get(fieldName);
+                newStruct.put(field, convertValue(value, field.schema()));
+            }
+        }
+
+        return newStruct;
     }
 
 
+    /**
+     * Merge two schemas, generalizing if necessary (e.g., making fields optional).
+     */
     private Schema mergeSchemas(Schema schema1, Schema schema2) {
         if (schema1.type() == schema2.type()) {
             return schema1;  // Same type, no need to change
         } else {
-            // If types differ, we generalize by making the schema optional, or other logic if needed
+            // If types differ, generalize by making the schema optional
             return SchemaBuilder.type(schema1.type()).optional().build();
         }
     }
 
-
     @Override
     public void close() {
+        // Clean up resources if needed
     }
-
 }
-
